@@ -1,0 +1,11 @@
+import sys, time, frida
+dev = frida.get_device(sys.argv[1])
+pid = next((p.pid for p in dev.enumerate_processes() if "ik-Connect" in p.name or "ikconnect" in p.name.lower()), None)
+print(f"[*] attaching to hik-connect pid={pid}", flush=True)
+s = dev.attach(pid)
+src = open(sys.argv[2]).read()
+sc = s.create_script(src)
+sc.on("message", lambda m,d: print(m.get("payload","") if m["type"]=="send" else "ERR:"+str(m), flush=True))
+sc.load()
+print("[*] hooks loaded — capturing", flush=True)
+time.sleep(int(sys.argv[3]))

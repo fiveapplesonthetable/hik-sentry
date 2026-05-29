@@ -1,0 +1,34 @@
+# secrets / sessions — never commit
+secrets.env
+hik_session.json
+*.session
+recipients.txt
+
+# python venv + caches
+venv/
+__pycache__/
+*.pyc
+
+# model weights (downloaded on demand)
+*.pt
+
+# data + outputs (large, regenerable)
+cloud_events/
+reports/
+footage/
+events/
+hits/
+logs/
+recordings/
+
+# captured media / pcaps
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.h264
+*.ts
+*.pcap
+*.raw
+*.bin
+.last_seen

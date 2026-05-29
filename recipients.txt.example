@@ -1,0 +1,8 @@
+# hik-sentry recipients — copy to recipients.txt (which is gitignored).
+# One email address per line. '#' starts a comment. Blank lines ignored.
+# If this file is absent and neither --to nor $RECIPIENTS is set, the report
+# goes to the account owner only.
+
+you@example.com
+# family@example.com
+# partner@example.com
