@@ -1,0 +1,7 @@
+[Unit]
+Description=Refresh the Hik-Connect session every 12h
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target

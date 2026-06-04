@@ -1,0 +1,5 @@
+[Unit]
+Description=Refresh Hik-Connect session token (keep it warm; ~24h expiry)
+[Service]
+Type=oneshot
+ExecStart=/mnt/agent/hik-sentry/venv/bin/python3 /mnt/agent/hikvision_e2e/scripts/hik.py refresh

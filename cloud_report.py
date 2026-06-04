@@ -64,11 +64,20 @@ def send_report(subject, body, attachments, recipients):
     return proc.returncode
 
 
-def session_headers():
+_EXTRA_HEADERS = {"clientVersion":"4.19.0.1014","appId":"HikConnect","clientNo":"google_play",
+                  "appChannel":"hikvision","customno":"1000002","osVersion":"13","netType":"WIFI"}
+
+
+def session_headers(force_refresh=False):
     s = hik.HikSession.load()
+    if s is None:
+        raise RuntimeError("no Hik session — run `hik.py login` first")
+    if force_refresh:
+        # Hik-Connect tokens expire in ~24h, so start each run on a known-fresh token
+        # rather than discovering it's dead mid-fetch (which used to look like 0 events).
+        s._relogin()
     H = dict(s._headers)
-    H.update({"clientVersion":"4.19.0.1014","appId":"HikConnect","clientNo":"google_play",
-              "appChannel":"hikvision","customno":"1000002","osVersion":"13","netType":"WIFI"})
+    H.update(_EXTRA_HEADERS)
     return s, H
 
 
@@ -78,8 +87,12 @@ def fetch_day(day: str, max_pages: int = 2000):
     of the last event; the API returns events strictly older than it. We start
     at the day's END boundary so we don't waste calls on later days, and page
     back until before the day's START. De-dup by alarmId. No event is skipped.
+
+    Self-healing: starts on a freshly-refreshed token and, if a page still comes
+    back 401 (token died mid-run), re-logs-in once and retries — so an expired
+    session can never again be silently reported as "0 events".
     """
-    s, H = session_headers()
+    s, H = session_headers(force_refresh=True)
     base = f"https://{s.api_domain}"
     day_start = datetime.datetime.strptime(day, "%Y-%m-%d")
     day_end = day_start + datetime.timedelta(days=1)
@@ -87,9 +100,19 @@ def fetch_day(day: str, max_pages: int = 2000):
     hi = int(day_end.timestamp()*1000)
     events = {}
     last = day_end.strftime("%Y-%m-%d %H:%M:%S")   # start just past the day's end
+    relogged = False
     for _ in range(max_pages):
         r = requests.get(base+"/v3/alarms", headers=H,
                          params={"limit":50,"queryType":-1,"lastTime":last}, timeout=20)
+        if r.status_code == 401:
+            if relogged or not s._relogin():
+                raise RuntimeError(
+                    "Hik-Connect auth failed and re-login did not recover — check "
+                    "HIK_EMAIL/HIK_PASSWORD in /mnt/agent/hikvision_e2e/secrets.env")
+            relogged = True
+            base = f"https://{s.api_domain}"
+            H = dict(s._headers); H.update(_EXTRA_HEADERS)
+            continue                                # retry the same cursor position
         j = r.json(); al = j.get("alarms", [])
         if not al:
             break
@@ -209,6 +232,28 @@ def main():
     conf=float(args[args.index("--conf")+1]) if "--conf" in args else 0.30
     cli_to=args[args.index("--to")+1] if "--to" in args else None
     recipients=load_recipients(cli_to)
+    try:
+        _run_report(day, conf, recipients)
+    except Exception as e:
+        # Never fail silently: any error (most likely an unrecoverable Hik auth failure)
+        # emails a clear alert so an empty/missing report can't go unnoticed again.
+        import traceback
+        alert=(f"⚠️ hik-sentry could NOT produce the report for {day}.\n\n"
+               f"Error: {e}\n\n"
+               "Most likely the Hik-Connect session expired AND re-login failed. Check "
+               "HIK_EMAIL / HIK_PASSWORD in /mnt/agent/hikvision_e2e/secrets.env, then run\n"
+               "  /mnt/agent/hik-sentry/venv/bin/python3 "
+               "/mnt/agent/hikvision_e2e/scripts/hik.py login --email <e> --password <p>\n\n"
+               + traceback.format_exc()[-1500:])
+        try:
+            send_report(f"[hik-sentry] ⚠️ FAILED for {day} — needs attention", alert, [], recipients)
+            print("[*] emailed failure alert")
+        except Exception as e2:
+            print(f"[!] could not even send the failure alert: {e2}", file=sys.stderr)
+        raise
+
+
+def _run_report(day, conf, recipients):
     print(f"[*] fetching motion events for {day}")
     s,H,events=fetch_day(day)
     print(f"[*] {len(events)} motion events from the device")

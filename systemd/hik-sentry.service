@@ -1,0 +1,6 @@
+[Unit]
+Description=hik-sentry daily motion-event report (device thumbnails + YOLO)
+[Service]
+Type=oneshot
+WorkingDirectory=/mnt/agent/hik-sentry
+ExecStart=/mnt/agent/hik-sentry/run-daily.sh
